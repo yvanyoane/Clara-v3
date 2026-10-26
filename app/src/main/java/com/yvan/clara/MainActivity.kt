@@ -19,9 +19,9 @@ import kotlin.math.abs
 import kotlin.math.sin
 
 private val MODELES = listOf(
+    "gemini-3.8-flash",
     "gemini-flash-latest",
-    "gemini-flash-lite-latest",
-    "gemini-2.5-flash"
+    "gemini-flash-lite-latest"
 )
 
 private const val PERSONNALITE =
@@ -118,10 +118,10 @@ class MainActivity : Activity() {
                 try {
                     val (code, texte) = appeler(cle, modele, question)
                     if (code in 200..299) return extraireReponse(texte)
-                    derniereErreur = "Erreur $code : " + extraireErreur(texte)
+                    derniereErreur = "Erreur $code ($modele) : " + extraireErreur(texte)
                     if (code == 400 || code == 401 || code == 403) return derniereErreur
                 } catch (e: Exception) {
-                    derniereErreur = "Erreur : " + (e.message ?: "réseau")
+                    derniereErreur = "Erreur ($modele) : " + (e.message ?: "réseau")
                 }
             }
             Thread.sleep(2000)
