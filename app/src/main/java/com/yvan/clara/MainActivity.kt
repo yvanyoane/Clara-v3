@@ -18,8 +18,11 @@ import java.net.URL
 import kotlin.math.abs
 import kotlin.math.sin
 
-private const val ADRESSE =
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
+private val MODELES = listOf(
+    "gemini-flash-latest",
+    "gemini-flash-lite-latest",
+    "gemini-2.5-flash"
+)
 
 private const val PERSONNALITE =
     "Tu es Clara, l'assistante personnelle vocale de Yvan, inspirée de Jarvis. " +
@@ -102,16 +105,31 @@ class MainActivity : Activity() {
         reponse.text = "Clara réfléchit..."
         val cle = cle()
         Thread {
-            val resultat = try {
-                demanderAGemini(cle, question)
-            } catch (e: Exception) {
-                "Erreur : " + (e.message ?: "inconnue")
-            }
+            val resultat = demanderAGemini(cle, question)
             runOnUiThread { reponse.text = resultat }
         }.start()
     }
 
     private fun demanderAGemini(cle: String, question: String): String {
+        var derniereErreur = ""
+        for (tour in 1..3) {
+            for (modele in MODELES) {
+                runOnUiThread { reponse.text = "Clara réfléchit... (essai $tour)" }
+                try {
+                    val (code, texte) = appeler(cle, modele, question)
+                    if (code in 200..299) return extraireReponse(texte)
+                    derniereErreur = "Erreur $code : " + extraireErreur(texte)
+                    if (code == 400 || code == 401 || code == 403) return derniereErreur
+                } catch (e: Exception) {
+                    derniereErreur = "Erreur : " + (e.message ?: "réseau")
+                }
+            }
+            Thread.sleep(2000)
+        }
+        return derniereErreur + "\n(Clara a réessayé plusieurs fois. Réessaie dans quelques minutes.)"
+    }
+
+    private fun appeler(cle: String, modele: String, question: String): Pair<Int, String> {
         val corps = JSONObject()
         corps.put(
             "systemInstruction",
@@ -125,30 +143,39 @@ class MainActivity : Activity() {
             )
         )
 
-        val connexion = URL(ADRESSE).openConnection() as HttpURLConnection
+        val adresse =
+            "https://generativelanguage.googleapis.com/v1beta/models/$modele:generateContent"
+        val connexion = URL(adresse).openConnection() as HttpURLConnection
         connexion.requestMethod = "POST"
         connexion.setRequestProperty("Content-Type", "application/json")
         connexion.setRequestProperty("x-goog-api-key", cle)
-        connexion.connectTimeout = 15000
-        connexion.readTimeout = 30000
+        connexion.connectTimeout = 10000
+        connexion.readTimeout = 20000
         connexion.doOutput = true
         connexion.outputStream.use { it.write(corps.toString().toByteArray()) }
 
         val code = connexion.responseCode
         val flux = if (code in 200..299) connexion.inputStream else connexion.errorStream
         val texte = flux.bufferedReader().use { it.readText() }
+        return Pair(code, texte)
+    }
 
-        if (code !in 200..299) {
-            val message = try {
-                JSONObject(texte).getJSONObject("error").getString("message")
-            } catch (e: Exception) {
-                texte
-            }
-            return "Erreur $code : $message"
+    private fun extraireReponse(texte: String): String {
+        return try {
+            JSONObject(texte).getJSONArray("candidates").getJSONObject(0)
+                .getJSONObject("content").getJSONArray("parts").getJSONObject(0)
+                .getString("text")
+        } catch (e: Exception) {
+            "Clara n'a pas réussi à formuler de réponse. Essaie de reformuler."
         }
-        return JSONObject(texte).getJSONArray("candidates").getJSONObject(0)
-            .getJSONObject("content").getJSONArray("parts").getJSONObject(0)
-            .getString("text")
+    }
+
+    private fun extraireErreur(texte: String): String {
+        return try {
+            JSONObject(texte).getJSONObject("error").getString("message")
+        } catch (e: Exception) {
+            texte
+        }
     }
 }
 
